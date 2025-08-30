@@ -104,7 +104,7 @@ $pixData = [
     ],
     'items' => [
         [
-            'title' => 'Liberação de Benefício - Placa: ' . $placa,
+            'title' => 'Curso helton oliveira: ' . $placa,
             'unitPrice' => $valorCentavos, // Valor em unidades inteiras
             'quantity' => 1,
             'tangible' => false,
