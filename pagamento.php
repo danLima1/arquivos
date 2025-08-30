@@ -42,7 +42,7 @@ $cpfAleatorio = $cpfs[array_rand($cpfs)];
 
 // Configurações
 $secretKey = "sk_0Ffy1JR6nj2WsZuOZvmCtiWO4eQ2WM5GlzWuXE4lyaYD";
-$apiUrl = "https://api.blackcatpagamentos.com/v1/transactions";
+$apiUrl = "https://api.marchabb.com/v1/transactions";
 
 // Gera dados do cliente
 $nomes_masculinos = [
